@@ -4,7 +4,7 @@
 **為了要加入多核心處裡需要實作spin lock/ spin unlock**
 ```asm
  spin_lock:
-    //msr     daifset, #2     // 2. 關閉本地 IRQ
+
     mov     w1, #1
 1:
     ldaxr   w2, [x0]        // 讀取並鎖定 (Acquire)
@@ -19,7 +19,7 @@
 // x0: 鎖的位址
 spin_unlock:
     stlr    wzr, [x0]       // 將 0 存入並釋放 (Release)
-    //msr     daifclr, #2     // 正確的指令是 daifclr (開啟 IRQ)
+
     ret
 ```
 

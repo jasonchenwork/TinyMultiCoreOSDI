@@ -7,11 +7,91 @@
 #include "print.h"
 #include "stdbool.h"
 #include "stddef.h"
+#include "stdint.h"
 // #include "tmmu.h"
 
 static struct Page free_memory;
 extern char end;
 void load_pgd(uint64_t map);
+ /* TTBR1 - 核心空間頁表 (Kernel Space) */
+extern uint64_t pgd_ttbr1[512] __attribute__((aligned(4096)));;
+extern uint64_t pud_ttbr1[512] __attribute__((aligned(4096)));;
+extern uint64_t pmd_ttbr1[512] __attribute__((aligned(4096)));;
+extern uint64_t pmd2_ttbr1[512] __attribute__((aligned(4096)));;
+ 
+
+/* TTBR0 - 用戶空間頁表 (User Space) */
+extern uint64_t pgd_ttbr0[512] __attribute__((aligned(4096)));;
+extern uint64_t pud_ttbr0[512] __attribute__((aligned(4096)));;
+extern uint64_t pmd_ttbr0[512] __attribute__((aligned(4096)));;
+ 
+
+
+void setup_vm2(void) {
+
+  uint64_t pgd1_pa, pud1_pa, pmd1_pa, pmd2_pa;
+    uint64_t pgd0_pa, pud0_pa, pmd0_pa;
+
+    __asm__ volatile("adr %0, pgd_ttbr1" : "=r"(pgd1_pa));
+    __asm__ volatile("adr %0, pud_ttbr1" : "=r"(pud1_pa));
+    __asm__ volatile("adr %0, pmd_ttbr1" : "=r"(pmd1_pa));
+    __asm__ volatile("adr %0, pmd2_ttbr1" : "=r"(pmd2_pa));
+
+    __asm__ volatile("adr %0, pgd_ttbr0" : "=r"(pgd0_pa));
+    __asm__ volatile("adr %0, pud_ttbr0" : "=r"(pud0_pa));
+    __asm__ volatile("adr %0, pmd_ttbr0" : "=r"(pmd0_pa));
+
+    // 2. 將物理位址轉為可寫入的指標
+    volatile uint64_t* pgd1 = (volatile uint64_t*)pgd1_pa;
+    volatile uint64_t* pud1 = (volatile uint64_t*)pud1_pa;
+    volatile uint64_t* pmd1 = (volatile uint64_t*)pmd1_pa;
+    volatile uint64_t* pmd2 = (volatile uint64_t*)pmd2_pa;
+    volatile uint64_t* pgd0 = (volatile uint64_t*)pgd0_pa;
+    volatile uint64_t* pud0 = (volatile uint64_t*)pud0_pa;
+    volatile uint64_t* pmd0 = (volatile uint64_t*)pmd0_pa;
+ 
+
+ 
+
+    // --- setup_kvm (TTBR1) ---
+
+    // 3. PGD[0] = pud_pa | 0x3
+    pgd1[0] = pud1_pa | 0x3;
+
+    // 4. PUD[0] = pmd_pa | 0x3
+    pud1[0] = pmd1_pa | 0x3;
+
+    // 5. Loop 1: RAM 映射 (0x0 ~ 0x34000000)
+    uint64_t pa = 0;
+    uint64_t attr_normal = (1ULL << 10) | (1ULL << 2) | 0x1;
+    while (pa < 0x34000000) {
+        pmd1[pa >> 21] = pa | attr_normal;
+        pa += (2*1024*1024);
+    }
+
+    // 6. Loop 2: UART/Device (0x3F000000 ~ 0x40000000)
+    pa = 0x3f000000;
+    uint64_t attr_device = (1ULL << 10) | 0x1;
+    while (pa < 0x40000000) {
+        pmd1[pa >> 21] = pa | attr_device;
+        pa += (2*1024*1024);
+    }
+
+    // 7. PUD[1] 指向 PMD2 並映射 Local Peripherals
+    pud1[1] = pmd2_pa | 0x3;
+    pa = 0x40000000;
+    while (pa < 0x41000000) {
+        pmd2[((pa - 0x40000000) >> 21)] = pa | attr_device;
+        pa += (2*1024*1024);
+    }
+
+    // --- setup_uvm (TTBR0) ---
+    pgd0[0] = pud0_pa | 0x3;
+    pud0[0] = pmd0_pa | 0x3;
+    pmd0[0] = 0x0 | attr_normal;
+
+    __asm__ volatile("dsb sy; isb");
+}
 
 static void free_region(uint64_t v, uint64_t e) {
   for (uint64_t start = PA_UP(v); start + PAGE_SIZE <= e; start += PAGE_SIZE) {
@@ -293,25 +373,9 @@ bool copy_uvm(uint64_t dst_map, uint64_t src_map, int size) {
 }
 
 void switch_vm(uint64_t map) { load_pgd(V2P(map)); }
-extern char pgd_ttbr1;
-extern char pud_ttbr1;
-extern char pmd_ttbr1;
-extern char pmd2_ttbr1;
-extern char end;  // 核心程式碼結束點
-
-// 宣告 ttbr0 的彙編符號
-extern char pgd_ttbr0;
-extern char pud_ttbr0;
-extern char pmd_ttbr0;
-
-// 之前的 ttbr1 符號
-extern char pgd_ttbr1;
-extern char pud_ttbr1;
-extern char pmd_ttbr1;
-extern char pmd2_ttbr1;
 
 extern char end;  // 連結器定義的核心結束位址
-
+#if 0
 void check_page_table_safety(void) {
   uint64_t kernel_end = (uint64_t)&end;
 
@@ -347,7 +411,7 @@ void check_page_table_safety(void) {
   }
   printk("==============================================\n\n");
 }
-
+#endif
 void init_memory(void) {
   // check_page_table_safety();
   free_region((uint64_t)&end, MEMORY_END);

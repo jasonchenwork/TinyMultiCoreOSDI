@@ -5,6 +5,7 @@
 .global start
 .global el1_entry
 .extern setup_vm
+.extern setup_vm2
 .extern enable_mmu
 
 start:
@@ -118,7 +119,7 @@ el1_entry:
 slave_loop:
    
     //bl setup_vm
-    bl invalidate_dcache
+   // bl invalidate_dcache
     bl enable_mmu        // 假設你的 enable_mmu 是多核安全的
     
     //mov x0, #0xffff000000000000
@@ -134,7 +135,9 @@ slave_loop:
     b   halt             // 其他核先休息
 
 master_init:
-    bl invalidate_dcache
+    //bl invalidate_dcache
+
+    //mov sp, #0x80000
     bl setup_vm
     bl enable_mmu
 
@@ -152,8 +155,9 @@ master_init:
     ldr x0, =vector_table
     msr vbar_el1, x0
     
-    //mov x0, #0xffff000000000000
-    //add sp, sp, x0
+ 
+    ldr x1, =stack_top
+    mov sp, x1
 
     ldr x0, =KMain
     blr x0

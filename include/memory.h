@@ -16,6 +16,7 @@ struct Page {
 #define V2P(v) ((uint64_t)(v) - KERNEL_BASE)
 
 #define MEMORY_END P2V(0x30000000)
+#define PAGE_SHIFT 21  // 21
 #define PAGE_SIZE (2 * 1024 * 1024)
 
 #define PA_UP(v) ((((uint64_t)v + PAGE_SIZE - 1) >> 21) << 21)
@@ -42,5 +43,5 @@ void free_page(uint64_t map, uint64_t vstart);
 void free_vm(uint64_t map);
 uint64_t read_pgd(void);
 bool copy_uvm(uint64_t dst_map, uint64_t src_map, int size);
-
+void setup_vm2(void);
 #endif

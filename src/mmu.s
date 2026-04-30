@@ -66,29 +66,16 @@ setup_kvm:
     adr x0, pgd_ttbr1
     adr x1, pud_ttbr1
     orr x1, x1, #3
-    str x1, [x0]              // pgd[0] = pud
-
-    mov x2, #511 * 8
-    add x0, x0, x2
-    str x1, [x0]              // pgd[511] = pud
+    str x1, [x0]
 
     adr x0, pud_ttbr1
     adr x1, pmd_ttbr1
     orr x1, x1, #3
-    str x1, [x0]              // pud[0] = pmd
-
-    mov x2, #5 * 8
-    add x0, x0, x2
-    str x1, [x0]              // pud[5] = pmd              // pud[0] = pmd
-
-    mov x2, #5 * 8
-    add x0, x0, x2
-    str x1, [x0]              // pud[5] = pmd
+    str x1, [x0]
 
     mov x2, #0x34000000
     adr x1, pmd_ttbr1
-    //mov x0, #(1 << 10 | 1 << 2 | 1 << 0)
-    mov x0, #ATTR_NORMAL_INNER
+    mov x0, #(1 << 10 | 1 << 2 | 1 << 0)
 
 loop1:
     str x0, [x1], #8
@@ -96,17 +83,7 @@ loop1:
     cmp x0, x2
     blo loop1
 
-    // Set pmd[0x4] for kernel block
-    adr x1, pmd_ttbr1
-    add x1, x1, #(0x4 * 8)
-    mov x0, #0x80000
-    orr x0, x0, #1
-    orr x0, x0, #(1 << 10)
-    orr x0, x0, #(1 << 2)
-    orr x0, x0, #(3 << 8)
-    str x0, [x1]
-
-    mov x2, #0x40200000
+    mov x2, #0x40000000
     mov x0, #0x3f000000
 
     adr x3, pmd_ttbr1
@@ -115,7 +92,6 @@ loop1:
 
     orr x0, x0, #1
     orr x0, x0, #(1 << 10)
-    orr x0, x0, #(3 << 8)
 
 loop2:
     str x0, [x1], #8
@@ -135,7 +111,6 @@ loop2:
     adr x1, pmd2_ttbr1
     orr x0, x0, #1
     orr x0, x0, #(1 << 10)
-    orr x0, x0, #(3 << 8)
 
 loop3:
     str x0, [x1], #8
@@ -156,8 +131,7 @@ setup_uvm:
     str x1, [x0]
 
     adr x1, pmd_ttbr0
-    //mov x0, #(1 << 10 | 1 << 2 | 1 << 0)
-    mov x0, #ATTR_NORMAL_INNER
+    mov x0, #(1 << 10 | 1 << 2 | 1 << 0)
     str x0, [x1]
 
     ret
