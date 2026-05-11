@@ -137,8 +137,8 @@ slave_loop:
 master_init:
     //bl invalidate_dcache
 
-    //mov sp, #0x80000
-    bl setup_vm
+    mov sp, #0x80000
+    bl setup_vm2
     bl enable_mmu
 
     ldr x0, =FS_BASE

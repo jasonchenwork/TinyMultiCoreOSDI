@@ -33,6 +33,77 @@ struct Page {
 #define DEVICE_MEMORY (0 << 2)
 #define USER (1 << 6)
 
+/*
+ *
+ * Block Descriptor Regorms (Level 1 & 2)
+ *
+ */
+
+/*
+ * 描述符類型 (Level 0-2)
+ * Bits [1:0]
+ */
+#define TD_TYPE_INVALID 0x0  // 無效或未映射
+#define TD_TYPE_BLOCK 0x1    // Block Descriptor (僅限 Level 1 & 2)
+#define TD_TYPE_TABLE 0x3    // Table Descriptor (指向下一層)
+#define TD_TYPE_PAGE 0x3     // Page Descriptor (僅限 Level 3)
+
+/*
+ * 存取限制與 Lower Attributes
+ * Bits [11:2]
+ */
+// AttrIndx [4:2] : 指向 MAIR_EL1 暫存器的索引
+#define TD_ATTR_INDEX(idx) ((idx) << 2)
+#define TD_ATTR_NORMAL TD_ATTR_INDEX(1)
+#define TD_ATTR_DEVICE TD_ATTR_INDEX(0)
+
+// NS [5] : Non-Secure bit (1 為非安全)
+#define TD_NS (1ULL << 5)
+
+// AP [7:6] : Access Permissions
+#define TD_AP_RW_EL1 (0ULL << 6)  // 核心可讀寫 (EL1)
+#define TD_AP_RW_ALL (1ULL << 6)  // 核心與用戶皆可讀寫 (EL1 & EL0)
+#define TD_AP_RO_EL1 (2ULL << 6)  // 核心唯讀
+#define TD_AP_RO_ALL (3ULL << 6)  // 全域唯讀
+
+// SH [9:8] : Shareability
+#define TD_SH_NON_SHARE (0ULL << 8)
+#define TD_SH_OUTER_SHARE (2ULL << 8)
+#define TD_SH_INNER_SHARE (3ULL << 8)
+
+// AF [10] : Access Flag (避免存取例外)
+#define TD_AF (1ULL << 10)
+
+// nG [11] : non-Global (用於 ASID 區分不同 Process 的快取)
+#define TD_NON_GLOBAL (1ULL << 11)
+
+/*
+ * Upper Attributes
+ * Bits [63:52]
+ */
+// Privileged Execute-Never (EL1 不可執行)
+#define TD_PXN (1ULL << 53)
+// Unprivileged Execute-Never (EL0 不可執行)
+#define TD_UXN (1ULL << 54)
+// Software Reserved (這幾個位元可供 OS 自由使用)
+#define TD_SW_RESERVED (0b1111ULL << 55)
+
+/*
+ *
+ */
+#define BOOT_NORMAL_ATTR \
+  (TD_AF | TD_SH_INNER_SHARE | TD_ATTR_NORMAL | TD_TYPE_BLOCK)
+#define BOOT_DEVICE_ATTR (TD_AF | TD_ATTR_DEVICE | TD_TYPE_BLOCK)
+#define USER_DATA_ATTR \
+  (TD_AF | TD_SH_INNER_SHARE | TD_ATTR_NORMAL | TD_TYPE_BLOCK | TD_AP_RW_ALL)
+
+// RPi3B 記憶體佈局
+#define RAM_MAX_ADDR 0x34000000
+#define PERIPHERAL_BASE 0x3F000000
+#define PERIPHERAL_END 0x40000000
+#define LOCAL_PERIPH_BASE 0x40000000
+#define LOCAL_PERIPH_END 0x41000000
+
 void* kalloc(void);
 void kfree(uint64_t v);
 void init_memory(void);

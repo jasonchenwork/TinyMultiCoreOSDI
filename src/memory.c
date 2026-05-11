@@ -52,45 +52,44 @@ void setup_vm2(void) {
  
 
  
+  // --- setup_kvm (TTBR1) ---
 
-    // --- setup_kvm (TTBR1) ---
+  // 3. PGD[0] = pud_pa | 0x3
+  pgd1[0] = pud1_pa | TD_TYPE_TABLE;
 
-    // 3. PGD[0] = pud_pa | 0x3
-    pgd1[0] = pud1_pa | 0x3;
+  // 4. PUD[0] = pmd_pa | 0x3
+  pud1[0] = pmd1_pa | TD_TYPE_TABLE;
 
-    // 4. PUD[0] = pmd_pa | 0x3
-    pud1[0] = pmd1_pa | 0x3;
+  // 5. Loop 1: RAM 映射 (0x0 ~ 0x34000000)
+  uint64_t pa = 0;
+  // uint64_t attr_normal = (1ULL << 10) | (1ULL << 2) | 0x1;
+  while (pa < RAM_MAX_ADDR) {
+    pmd1[pa >> 21] = pa | BOOT_NORMAL_ATTR;
+    pa += PAGE_SIZE;
+  }
 
-    // 5. Loop 1: RAM 映射 (0x0 ~ 0x34000000)
-    uint64_t pa = 0;
-    uint64_t attr_normal = (1ULL << 10) | (1ULL << 2) | 0x1;
-    while (pa < 0x34000000) {
-        pmd1[pa >> 21] = pa | attr_normal;
-        pa += (2*1024*1024);
-    }
+  // 6. Loop 2: UART/Device (0x3F000000 ~ 0x40000000)
+  pa = 0x3f000000;
+  // uint64_t attr_device = (1ULL << 10) | 0x1;
+  while (pa < PERIPHERAL_END) {
+    pmd1[pa >> 21] = pa | BOOT_DEVICE_ATTR;
+    pa += PAGE_SIZE;
+  }
 
-    // 6. Loop 2: UART/Device (0x3F000000 ~ 0x40000000)
-    pa = 0x3f000000;
-    uint64_t attr_device = (1ULL << 10) | 0x1;
-    while (pa < 0x40000000) {
-        pmd1[pa >> 21] = pa | attr_device;
-        pa += (2*1024*1024);
-    }
+  // 7. PUD[1] 指向 PMD2 並映射 Local Peripherals
+  pud1[1] = pmd2_pa | TD_TYPE_TABLE;
+  pa = LOCAL_PERIPH_BASE;
+  while (pa < LOCAL_PERIPH_END) {
+    pmd2[((pa - LOCAL_PERIPH_BASE) >> 21)] = pa | BOOT_DEVICE_ATTR;
+    pa += PAGE_SIZE;
+  }
 
-    // 7. PUD[1] 指向 PMD2 並映射 Local Peripherals
-    pud1[1] = pmd2_pa | 0x3;
-    pa = 0x40000000;
-    while (pa < 0x41000000) {
-        pmd2[((pa - 0x40000000) >> 21)] = pa | attr_device;
-        pa += (2*1024*1024);
-    }
+  // --- setup_uvm (TTBR0) ---
+  pgd0[0] = pud0_pa | TD_TYPE_TABLE;
+  pud0[0] = pmd0_pa | TD_TYPE_TABLE;
+  pmd0[0] = 0x0 | BOOT_NORMAL_ATTR;
 
-    // --- setup_uvm (TTBR0) ---
-    pgd0[0] = pud0_pa | 0x3;
-    pud0[0] = pmd0_pa | 0x3;
-    pmd0[0] = 0x0 | attr_normal;
-
-    __asm__ volatile("dsb sy; isb");
+  __asm__ volatile("dsb sy; isb");
 }
 
 static void free_region(uint64_t v, uint64_t e) {
