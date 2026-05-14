@@ -6,6 +6,28 @@
 #include "stdbool.h"
 #include "stdint.h"
 
+#define MAX_ORDER 9               // æœ€å¤§éšŽå±¤ (2^9 é  =  512MB)
+#define MEM_SIZE 2 * 1024 * 1024  // ç¸½å…± 2MB
+
+#define LinkListMode 0
+#define BuddyMode 1
+#define MEMORYMANAGER BuddyMode
+
+// é›™å‘éˆçµä¸²åˆ—ç¯€é»ž
+typedef struct list_node {
+  struct list_node *prev, *next;
+} list_node_t;
+
+// å¤¥ä¼´ç³»çµ±ç®¡ç†å™¨
+typedef struct {
+  spinlock_t lock __attribute__((aligned(16)));
+  list_node_t free_lists[MAX_ORDER];
+  uintptr_t start_addr;
+
+} buddy_allocator_t;
+
+static buddy_allocator_t allocator;
+
 struct Page {
   spinlock_t lock __attribute__((aligned(16)));
   struct Page* next;
@@ -19,8 +41,8 @@ struct Page {
 #define PAGE_SHIFT 21  // 21
 #define PAGE_SIZE (2 * 1024 * 1024)
 
-#define PA_UP(v) ((((uint64_t)v + PAGE_SIZE - 1) >> 21) << 21)
-#define PA_DOWN(v) (((uint64_t)v >> 21) << 21)
+#define PA_UP(v) ((((uint64_t)v + PAGE_SIZE - 1) >> PAGE_SHIFT) << PAGE_SHIFT)
+#define PA_DOWN(v) (((uint64_t)v >> PAGE_SHIFT) << PAGE_SHIFT)
 
 #define PDE_ADDR(p) ((uint64_t)p & 0xfffffffff000)
 #define PTE_ADDR(p) ((uint64_t)p & 0xffffffe00000)
@@ -40,52 +62,52 @@ struct Page {
  */
 
 /*
- * ÃèÊö·ûîÐÍ (Level 0-2)
+ * æè¿°ç¬¦é¡žåž‹ (Level 0-2)
  * Bits [1:0]
  */
-#define TD_TYPE_INVALID 0x0  // ŸoÐ§»òÎ´Ó³Éä
-#define TD_TYPE_BLOCK 0x1    // Block Descriptor (ƒHÏÞ Level 1 & 2)
-#define TD_TYPE_TABLE 0x3    // Table Descriptor (Ö¸ÏòÏÂÒ»ŒÓ)
-#define TD_TYPE_PAGE 0x3     // Page Descriptor (ƒHÏÞ Level 3)
+#define TD_TYPE_INVALID 0x0  // ç„¡æ•ˆæˆ–æœªæ˜ å°„
+#define TD_TYPE_BLOCK 0x1    // Block Descriptor (åƒ…é™ Level 1 & 2)
+#define TD_TYPE_TABLE 0x3    // Table Descriptor (æŒ‡å‘ä¸‹ä¸€å±¤)
+#define TD_TYPE_PAGE 0x3     // Page Descriptor (åƒ…é™ Level 3)
 
 /*
- * ´æÈ¡ÏÞÖÆÅc Lower Attributes
+ * å­˜å–é™åˆ¶èˆ‡ Lower Attributes
  * Bits [11:2]
  */
-// AttrIndx [4:2] : Ö¸Ïò MAIR_EL1 •º´æÆ÷µÄË÷Òý
+// AttrIndx [4:2] : æŒ‡å‘ MAIR_EL1 æš«å­˜å™¨çš„ç´¢å¼•
 #define TD_ATTR_INDEX(idx) ((idx) << 2)
 #define TD_ATTR_NORMAL TD_ATTR_INDEX(1)
 #define TD_ATTR_DEVICE TD_ATTR_INDEX(0)
 
-// NS [5] : Non-Secure bit (1 žé·Ç°²È«)
+// NS [5] : Non-Secure bit (1 ç‚ºéžå®‰å…¨)
 #define TD_NS (1ULL << 5)
 
 // AP [7:6] : Access Permissions
-#define TD_AP_RW_EL1 (0ULL << 6)  // ºËÐÄ¿É×xŒ‘ (EL1)
-#define TD_AP_RW_ALL (1ULL << 6)  // ºËÐÄÅcÓÃ‘ô½Ô¿É×xŒ‘ (EL1 & EL0)
-#define TD_AP_RO_EL1 (2ULL << 6)  // ºËÐÄÎ¨×x
-#define TD_AP_RO_ALL (3ULL << 6)  // È«ÓòÎ¨×x
+#define TD_AP_RW_EL1 (0ULL << 6)  // æ ¸å¿ƒå¯è®€å¯« (EL1)
+#define TD_AP_RW_ALL (1ULL << 6)  // æ ¸å¿ƒèˆ‡ç”¨æˆ¶çš†å¯è®€å¯« (EL1 & EL0)
+#define TD_AP_RO_EL1 (2ULL << 6)  // æ ¸å¿ƒå”¯è®€
+#define TD_AP_RO_ALL (3ULL << 6)  // å…¨åŸŸå”¯è®€
 
 // SH [9:8] : Shareability
 #define TD_SH_NON_SHARE (0ULL << 8)
 #define TD_SH_OUTER_SHARE (2ULL << 8)
 #define TD_SH_INNER_SHARE (3ULL << 8)
 
-// AF [10] : Access Flag (±ÜÃâ´æÈ¡ÀýÍâ)
+// AF [10] : Access Flag (é¿å…å­˜å–ä¾‹å¤–)
 #define TD_AF (1ULL << 10)
 
-// nG [11] : non-Global (ÓÃì¶ ASID …^·Ö²»Í¬ Process µÄ¿ìÈ¡)
+// nG [11] : non-Global (ç”¨æ–¼ ASID å€åˆ†ä¸åŒ Process çš„å¿«å–)
 #define TD_NON_GLOBAL (1ULL << 11)
 
 /*
  * Upper Attributes
  * Bits [63:52]
  */
-// Privileged Execute-Never (EL1 ²»¿ÉˆÌÐÐ)
+// Privileged Execute-Never (EL1 ä¸å¯åŸ·è¡Œ)
 #define TD_PXN (1ULL << 53)
-// Unprivileged Execute-Never (EL0 ²»¿ÉˆÌÐÐ)
+// Unprivileged Execute-Never (EL0 ä¸å¯åŸ·è¡Œ)
 #define TD_UXN (1ULL << 54)
-// Software Reserved (ß@Ž×‚€Î»Ôª¿É¹© OS ×ÔÓÉÊ¹ÓÃ)
+// Software Reserved (é€™å¹¾å€‹ä½å…ƒå¯ä¾› OS è‡ªç”±ä½¿ç”¨)
 #define TD_SW_RESERVED (0b1111ULL << 55)
 
 /*
@@ -97,7 +119,7 @@ struct Page {
 #define USER_DATA_ATTR \
   (TD_AF | TD_SH_INNER_SHARE | TD_ATTR_NORMAL | TD_TYPE_BLOCK | TD_AP_RW_ALL)
 
-// RPi3B Ó›‘›ówÑ¾Ö
+// RPi3B è¨˜æ†¶é«”ä½ˆå±€
 #define RAM_MAX_ADDR 0x34000000
 #define PERIPHERAL_BASE 0x3F000000
 #define PERIPHERAL_END 0x40000000
