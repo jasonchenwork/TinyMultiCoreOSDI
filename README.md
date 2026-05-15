@@ -36,3 +36,111 @@ spin_unlock:
 **新增CMD PS(process state)**  
 
 ![](https://github.com/jasonchenwork/TinyMultiCoreOSDI/blob/main/image/ps.bmp)
+
+**新增 buddy system**  
+```C
+// 分配記憶體
+void* buddy_alloc(int order) {
+  for (int i = order; i < MAX_ORDER; i++) {
+    if (!list_empty(&allocator.free_lists[i])) {
+      // 找到空閒塊
+      list_node_t* block = allocator.free_lists[i].next;
+      list_del(block);
+
+      // 如果找到的塊比需求大，則不斷分裂 (Split)
+      while (i > order) {
+        i--;
+        // 計算分裂出的另一半（夥伴）
+        uintptr_t buddy = (uintptr_t)block + (1UL << (i + PAGE_SHIFT));
+        list_add(&allocator.free_lists[i], (list_node_t*)buddy);
+      }
+      return (void*)block;
+    }
+  }
+  return NULL;  // 記憶體不足
+}
+
+// 釋放記憶體並嘗試合併 (Coalesce)
+void buddy_free(void* ptr, int order) {
+  uintptr_t addr = (uintptr_t)ptr;
+
+  for (int i = order; i < MAX_ORDER - 1; i++) {
+    // 計算夥伴地址
+    uintptr_t buddy = allocator.start_addr + ((addr - allocator.start_addr) ^
+                                              (1UL << (i + PAGE_SHIFT)));
+
+    // 檢查夥伴是否在空閒串列中 (此處簡化檢查邏輯)
+    bool buddy_found = false;
+    list_node_t* curr;
+    for (curr = allocator.free_lists[i].next; curr != &allocator.free_lists[i];
+         curr = curr->next) {
+      if ((uintptr_t)curr == buddy) {
+        buddy_found = true;
+        break;
+      }
+    }
+
+    if (buddy_found) {
+      // 合併：從目前層級移除夥伴，並往上一層遞迴
+      list_del((list_node_t*)buddy);
+      addr = addr < buddy ? addr : buddy;  // 取兩者較小者作為合併後的起始地址
+    } else {
+      break;  // 夥伴不在空閒串列，停止合併
+    }
+    list_add(&allocator.free_lists[i], (list_node_t*)addr);
+  }
+
+  // list_add(&allocator.free_lists[order], (list_node_t*)addr);
+}
+```
+
+### Build
+```bash
+make
+```
+
+### Run on QEMU
+```bash
+make run 
+```
+
+### Clean 
+```bash
+make clean
+```
+
+## Directory structure
+```
+.
+├── README.md
+├── Makefile    
+├── data
+│   └── os.img
+├── include                 
+│   ├── debug.h          
+│   ├── file.h
+│   ├── handler.h
+│   ├── irq.h
+│   ├── lib.h
+│   ├── memory.h
+│   ├── print.h              
+│   ├── process.h            
+│   └── uart.h
+└── src                     
+    ├── boot.s          
+    ├── handler.s
+    ├── liba.s
+    ├── mmu.s
+    ├── debug.c
+    ├── file.c
+    ├── handler.c
+    ├── keyboard.c               
+    ├── lib.c
+    ├── main.c            
+    ├── memory.c
+    ├── print.c
+    ├── process.c
+    ├── syscall.c
+    ├── uart.c
+    └── link.lds
+```  
